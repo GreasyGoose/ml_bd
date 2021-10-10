@@ -1,0 +1,14 @@
+hdfs dfs -mkdir /my_dir
+hdfs dfs -mkdir /my_dir/temp
+
+#Trash are the files you have deleted from HDFS. They are stored in Trash folder.
+#Use "-skipTrash" flag to completely delete files
+
+hdfs dfs -touchz /my_dir/temp/empty_file.txt
+hdfs dfs -rm -skipTrash /my_dir/temp/empty_file.txt
+hdfs dfs -rm -R -skipTrash /my_dir
+
+hdfs dfs -put train.csv /my_dir/
+hdfs dfs -tail /my_dir/train.csv
+hdfs dfs -cat /my_dir/train.csv | head -n 5
+hdfs dfs -cp /my_dir/train.csv /new_folder
