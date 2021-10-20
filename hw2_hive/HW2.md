@@ -134,3 +134,19 @@ WHERE
 
 ### 3)  Most popular lastfm_tag
 
+```
+SELECT
+    tag_lastfm,
+    COUNT(*) as cnt
+FROM
+    artist.artists 
+    LATERAL VIEW EXPLODE(SPLIT(artists.tags_lastfm, ";")) tag as tag_lastfm
+WHERE
+    tag_lastfm != ""
+GROUP BY
+    tag_lastfm
+ORDER BY
+   cnt desc
+LIMIT 1;
+```
+![alt text](06_sql_popular_tag.png)
