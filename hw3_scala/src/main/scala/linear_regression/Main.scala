@@ -2,7 +2,7 @@ package linear_regression
 
 import breeze.linalg.Matrix.castOps
 import breeze.linalg.{DenseVector, _}
-import breeze.numerics.{exp, log}
+import breeze.numerics.{pow, exp, log}
 import breeze.stats.mean
 
 import java.io._
@@ -104,7 +104,7 @@ object Main {
     var w: DenseVector[Double] = DenseVector.zeros[Double](x.cols)
     var b: Double = 0.0
     val learning_rate: Double = 0.1
-    val num_of_iterations = 10000
+    val num_of_iterations = 1000
 
     for (i <- 1 to num_of_iterations) {
       val (new_w, new_b) = update_weights(x, y, w, b, learning_rate)
@@ -113,7 +113,7 @@ object Main {
       if (i % 100 == 0) {
 
         val score = validate(x_val, y_val, w, b)
-        val message = f"Epoch $i%s: R2 score $score%2.2f"
+        val message = f"Epoch $i%s: R2 score $score%2.6f"
         val filename = f"output/epoch_$i%s.txt"
         val file = new File(filename)
         val bw = new BufferedWriter(new FileWriter(file))
@@ -136,7 +136,7 @@ object Main {
     //  calc R2 score
     val a = y - y_pred
     val b = y - mean(y)
-    1.0 - sum(a) / sum(b)
+    1.0 - sum(pow(a, 2)) / sum(pow(b, 2))
   }
 
   def save_model(w: DenseVector[Double], b: Double): Unit = {
