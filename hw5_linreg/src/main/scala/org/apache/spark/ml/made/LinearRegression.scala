@@ -25,13 +25,12 @@ trait LinearRegressionParams extends HasInputCol with HasOutputCol {
 
   // Predictions
   def setPredCol(value: String): this.type = set(predCol, value)
-  setDefault(predCol -> "")
+  setDefault(predCol -> "preds")
 
   // Learning rate value
   val lr = new DoubleParam(this, "lr", "learning rate value")
   def setLr(value: Double) : this.type = set(lr, value)
-  setDefault(lr -> 1e-1)
-  
+  setDefault(lr -> 1e-2)
 
   val num_of_iterations = new IntParam(this, "num_of_iterations", "number of iterations before stop")
   def setIter(value: Int) : this.type = set(num_of_iterations, value)
@@ -41,13 +40,7 @@ trait LinearRegressionParams extends HasInputCol with HasOutputCol {
     SchemaUtils.checkColumnType(schema, getInputCol, new VectorUDT())
     SchemaUtils.appendColumn(schema, schema(getInputCol).copy(name = getOutputCol))
     schema
-
-//    if (schema.fieldNames.contains($(outputCol))) {
-//      SchemaUtils.checkColumnType(schema, getOutputCol, new VectorUDT())
-//      schema
-//    } else {
-//      SchemaUtils.appendColumn(schema, schema(getInputCol).copy(name = getOutputCol))
-//    }
+    
   }
 }
 
@@ -61,47 +54,51 @@ class LinearRegression(override val uid: String) extends Estimator[LinearRegress
     // Used to convert untyped dataframes to datasets with vectors
     implicit val encoder : Encoder[Vector] = ExpressionEncoder()
 
+
+    //VectorAssembler combines a given list of columns into a single vector column
+    //input_col - features, outputCol - targets, we combine them into "res" column
     val new_col = "res"
     val assembler = new VectorAssembler()
       .setInputCols(Array($(inputCol), $(outputCol)))
       .setOutputCol(new_col)
 
-    //input_col - features, preds
+    //after transformation we features and targets will be combined in "res" col
+    // with dim [features.length + targets.length] = 3+1
+    val transformed = assembler.transform(dataset)
 
-
-    val transformed = assembler.
-      transform(dataset)
+    //now we select row "res" with combined data
     val vectors: Dataset[Vector] = transformed.select(new_col).as[Vector]
 
     val dim: Int = AttributeGroup.fromStructField((dataset.schema($(inputCol)))).numAttributes.getOrElse(
-      vectors.first().size - 1
-//        vectors.first().size
+        vectors.first().size
     )
 
-    var coeff = breeze.linalg.DenseVector.rand[Double](dim + 1)
+    var coeff = breeze.linalg.DenseVector.rand[Double](dim)
 
     for (i <- 1 to $(num_of_iterations)) {
-      val res = vectors.rdd.mapPartitions((data: Iterator[Vector]) => {
+      val summary = vectors.rdd.mapPartitions((data: Iterator[Vector]) => {
         val summarizer = new MultivariateOnlineSummarizer()
         data.foreach(vec => {
-          val x = vec.asBreeze(0 to coeff.size - 1).toDenseVector
-          val y = vec.asBreeze(-1)
-          val diff = x * (sum(x * coeff) - y)
-          summarizer.add(mllib.linalg.Vectors.fromBreeze(diff))
+          val data_vec = vec.asBreeze
+          val x = data_vec(0 to data_vec.length - 2).toDenseVector //features
+          val y = data_vec(-1) //targets
+          val w = coeff(0 to coeff.length - 2)
+          val b = coeff(-1)
+          val y_pred = sum(x * w) + b //predicted targets
+          val dw: breeze.linalg.DenseVector[Double] = - (2.0 * x * (y - y_pred))
+          val db: Double = - (2.0 * (y - y_pred))
+          val output = breeze.linalg.DenseVector.vertcat(dw, breeze.linalg.DenseVector[Double](db))
+          summarizer.add(mllib.linalg.Vectors.fromBreeze(output))
         })
         Iterator(summarizer)
       }).reduce(_ merge _)
 
-      coeff = coeff - res.mean.asBreeze * $(lr)
+      coeff = coeff - summary.mean.asBreeze * $(lr)
     }
 
 
     copyValues(new LinearRegressionModel(coeff).setParent(this))
-    //    val Row(row: Row) =  dataset
-    //      .select(Summarizer.metrics("mean", "std").summary(dataset($(inputCol))))
-    //      .first()
-    //
-    //    copyValues(new LinearRegressionModel(row.getAs[Vector](0).toDense, row.getAs[Vector](1).toDense)).setParent(this)
+
   }
 
   override def copy(extra: ParamMap): Estimator[LinearRegressionModel] = defaultCopy(extra)
@@ -119,7 +116,7 @@ class LinearRegressionModel private[made](
 
 
   private[made] def this(coeff: breeze.linalg.DenseVector[Double]) =
-    this(Identifiable.randomUID("LinearRegressionModel"),coeff)
+    this(Identifiable.randomUID("LinearRegressionModel"), coeff)
 
   override def copy(extra: ParamMap): LinearRegressionModel = copyValues(
     new LinearRegressionModel(coeff), extra)
